@@ -50,8 +50,15 @@ left alone. "Shared, on purpose" and "I could not resolve this, so I left it"
 look identical in the copied page but mean very different things — and a silent
 skip once hid a real bug for a whole release. Unresolvable ones are flagged.
 
-Datasources are stored as `{GUID}` in the layout, so they are looked up by id
-first (`where: { itemId: }`) with a fallback to path.
+**Locality is decided by walking down, not by looking up.** Datasources are
+stored as `{GUID}` in the layout, and deciding whether one is the page's own
+would naturally mean resolving that guid to a path and comparing. Repeated
+guesses at how this schema spells an id-based item query were all wrong, and
+each failure classified the datasource as shared and skipped it. So
+`src/lib/copy/local-items.ts` walks *down* from the page with
+`children { nodes }` — proven to work — and membership becomes an id lookup in
+a map. No id-to-path query is involved. Child pages are skipped: their
+datasources are their own, and descending into them would walk the whole site.
 
 ### The `Data` folder
 
@@ -156,6 +163,15 @@ src/components/     the panel's four steps
 
 The pure logic in `src/lib/` is unit-tested; the Authoring API is stubbed in
 `src/lib/copy/execute.test.ts`.
+
+## Schema check
+
+The panel has a **Schema check** section on the results step. It runs GraphQL
+introspection against the tenant and prints what `ItemQueryInput` accepts and
+what the item mutations look like. It exists because the Authoring schema is
+the one thing this app cannot see from the outside — three assumptions about it
+were wrong, each costing a deploy to discover. When a copy misbehaves in a way
+the error does not explain, run it and read the real field list.
 
 ## Known gaps
 

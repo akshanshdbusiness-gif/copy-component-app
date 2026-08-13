@@ -1,4 +1,4 @@
-import { newGuid } from "../guid";
+import { newGuid, normalizeGuid } from "../guid";
 import { appendRenderings, parseLayoutXml, primaryDeviceId } from "../layout/layout-xml";
 import { relocateSubtree } from "../layout/placeholders";
 import type { AuthoringClient } from "../marketplace/authoring";
@@ -10,6 +10,7 @@ import {
   type Rendering,
   type RenderingSubtree,
 } from "../types";
+import { mapLocalItems } from "./local-items";
 import {
   PAGE_DATA_TEMPLATE_ID,
   classifyDataSource,
@@ -35,7 +36,12 @@ export async function executeCopy(
   request: CopyRequest,
   options: ExecuteOptions = {},
 ): Promise<CopyResult[]> {
-  const dataSourcePaths = await resolveDataSourcePaths(authoring, request.source.subtree);
+  const dataSourcePaths = await resolveDataSourcePaths(
+    authoring,
+    request.source.subtree,
+    request.source.pagePath,
+    request.language,
+  );
   const results: CopyResult[] = [];
 
   for (const target of request.targets) {
@@ -124,6 +130,8 @@ interface ResolvedDataSource {
 async function resolveDataSourcePaths(
   authoring: AuthoringClient,
   subtree: RenderingSubtree,
+  sourcePagePath: string,
+  language?: string,
 ): Promise<Map<string, ResolvedDataSource>> {
   const resolved = new Map<string, ResolvedDataSource>();
   const pending = new Set(
@@ -131,16 +139,28 @@ async function resolveDataSourcePaths(
       .map((r) => r.dataSource)
       .filter((ds) => needsPathResolution(ds)),
   );
+  if (pending.size === 0) return resolved;
+
+  // Walking down from the page settles the only question that matters — is
+  // this datasource the page's own? — without an id-to-path query.
+  const localItems = await mapLocalItems(authoring, sourcePagePath, language);
 
   for (const dataSource of pending) {
-    const { item, errors } = await authoring.resolveItem(dataSource);
-    if (item?.path) {
-      resolved.set(dataSource, { path: item.path });
-    } else {
-      resolved.set(dataSource, {
-        failure: errors.length > 0 ? errors.join("; ") : "no item found with that id",
-      });
+    const localPath = localItems.get(normalizeGuid(dataSource));
+    if (localPath) {
+      resolved.set(dataSource, { path: localPath });
+      continue;
     }
+
+    // Not under the page. Look it up anyway so the report can name where it
+    // does live — but a failure here is now cosmetic, not a lost copy.
+    const { item, errors } = await authoring.resolveItem(dataSource);
+    resolved.set(
+      dataSource,
+      item?.path
+        ? { path: item.path }
+        : { failure: errors.length > 0 ? errors.join("; ") : "not found under the page" },
+    );
   }
   return resolved;
 }

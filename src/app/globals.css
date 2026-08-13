@@ -250,6 +250,21 @@ body {
   font-size: 11px;
 }
 
+.report {
+  max-height: 320px;
+  margin: 0;
+  padding: 8px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.4;
+  white-space: pre;
+}
+
 /* A copy that succeeded but left something behind still needs to catch the eye. */
 .step--warn {
   color: var(--danger);

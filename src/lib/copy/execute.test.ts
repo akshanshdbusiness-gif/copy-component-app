@@ -345,6 +345,47 @@ describe("executeCopy", () => {
     expect(authoring.writes).toHaveLength(1);
   });
 
+  // The real-world failure: the tenant's schema would not resolve a guid by
+  // any spelling we tried, so classification had to stop depending on it.
+  it("finds a local datasource by walking down from the page when id lookup is unavailable", async () => {
+    const authoring = fakeWithLocalDataSource();
+    // Simulate an endpoint where no id-based item query works at all.
+    authoring.getItemById = async () => null;
+    authoring.resolveItem = async () => ({ item: null, errors: ["itemId not supported"] });
+    authoring.children.set(SOURCE_PAGE, [
+      {
+        itemId: "{SRCDATA0-0000-0000-0000-000000000000}",
+        name: "Data",
+        displayName: "Data",
+        path: `${SOURCE_PAGE}/Data`,
+        hasChildren: true,
+        hasPresentation: false,
+      },
+    ]);
+    authoring.children.set(`${SOURCE_PAGE}/Data`, [
+      {
+        itemId: LOCAL_DS,
+        name: "Promo",
+        displayName: "Promo",
+        path: `${SOURCE_PAGE}/Data/Promo`,
+        hasChildren: false,
+        hasPresentation: false,
+      },
+    ]);
+
+    const subtree: RenderingSubtree = {
+      root: rendering({ uid: CONTAINER, dataSource: LOCAL_DS }),
+      descendants: [],
+    };
+
+    const [result] = await executeCopy(authoring.asClient(), request(subtree));
+
+    expect(result.ok).toBe(true);
+    expect(authoring.copies).toHaveLength(1);
+    expect(authoring.copies[0].source).toBe(LOCAL_DS);
+    expect(result.steps.some((s) => s.kind === "copy-datasource")).toBe(true);
+  });
+
   // The regression that made a copy look successful while landing empty.
   it("resolves a guid datasource by id, not by path", async () => {
     const authoring = fakeWithLocalDataSource();

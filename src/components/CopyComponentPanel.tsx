@@ -5,6 +5,7 @@ import { RenderingPicker } from "./RenderingPicker";
 import { TargetPagePicker } from "./TargetPagePicker";
 import { PlaceholderPrompt, type TargetPlaceholders } from "./PlaceholderPrompt";
 import { ResultList } from "./ResultList";
+import { SchemaCheck } from "./SchemaCheck";
 import { executeCopy } from "@/src/lib/copy/execute";
 import { findSiteRoot } from "@/src/lib/copy/site-root";
 import { collectSubtree, parsePresentationDetails } from "@/src/lib/layout/presentation";
@@ -360,6 +361,7 @@ export function CopyComponentPanel() {
         <>
           {runError && <p className="notice notice--error">{runError}</p>}
           <ResultList results={results} />
+          <SchemaCheck authoring={authoring} />
           <div className="actions">
             <button type="button" className="button button--primary" onClick={startOver}>
               Copy another
