@@ -6,6 +6,7 @@ import { TargetPagePicker } from "./TargetPagePicker";
 import { PlaceholderPrompt, type TargetPlaceholders } from "./PlaceholderPrompt";
 import { ResultList } from "./ResultList";
 import { SchemaCheck } from "./SchemaCheck";
+import type { TraceInput } from "@/src/lib/copy/trace";
 import { executeCopy } from "@/src/lib/copy/execute";
 import { findSiteRoot } from "@/src/lib/copy/site-root";
 import { collectSubtree, parsePresentationDetails } from "@/src/lib/layout/presentation";
@@ -77,6 +78,20 @@ export function CopyComponentPanel() {
   const subtree = useMemo(
     () => (selectedUid ? collectSubtree(renderings, selectedUid) : null),
     [renderings, selectedUid],
+  );
+
+  const trace: TraceInput | null = useMemo(
+    () =>
+      context && subtree
+        ? {
+            pageIdFromPages: context.pageId,
+            pagePathFromPages: context.pagePath,
+            language: context.language,
+            subtree,
+            targetPath: targets[0]?.path,
+          }
+        : null,
+    [context, subtree, targets],
   );
 
   // The Authoring passthrough needs the environment's context id, which comes
@@ -339,6 +354,9 @@ export function CopyComponentPanel() {
             }
             isLoading={placeholdersLoading}
           />
+          {/* Available before the copy runs, so a wrong decision can be seen
+              without having to write anything to the target page first. */}
+          <SchemaCheck authoring={authoring} trace={trace} />
           <div className="actions">
             <button type="button" className="button" onClick={() => setStage("pick-targets")}>
               Back
@@ -361,7 +379,7 @@ export function CopyComponentPanel() {
         <>
           {runError && <p className="notice notice--error">{runError}</p>}
           <ResultList results={results} />
-          <SchemaCheck authoring={authoring} />
+          <SchemaCheck authoring={authoring} trace={trace} />
           <div className="actions">
             <button type="button" className="button button--primary" onClick={startOver}>
               Copy another

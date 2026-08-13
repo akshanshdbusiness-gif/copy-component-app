@@ -3,24 +3,31 @@
 import { useState } from "react";
 import type { AuthoringClient } from "@/src/lib/marketplace/authoring";
 import { runSchemaCheck } from "@/src/lib/marketplace/introspect";
+import { traceCopy, type TraceInput } from "@/src/lib/copy/trace";
 
 /**
- * Ask the tenant what its Authoring schema actually looks like.
+ * Diagnostics for the two things this app cannot see from the outside: the
+ * tenant's Authoring schema, and what the copy concluded about the current
+ * selection.
  *
- * Kept in the shipped panel rather than a scratch script because the schema is
- * the thing this app cannot see from the outside: when a copy misbehaves, the
- * fastest path to an answer is the real field list, not another guess.
+ * Every failure so far has been a silent misclassification rather than an
+ * error, so "run this and read the verdict" beats reasoning from the outcome.
  */
-export function SchemaCheck({ authoring }: { authoring: AuthoringClient | null }) {
+export function SchemaCheck({
+  authoring,
+  trace,
+}: {
+  authoring: AuthoringClient | null;
+  trace?: TraceInput | null;
+}) {
   const [report, setReport] = useState<string | null>(null);
   const [isRunning, setIsRunning] = useState(false);
-  const [isOpen, setIsOpen] = useState(false);
 
-  const run = async () => {
+  const run = async (task: () => Promise<string>) => {
     if (!authoring) return;
     setIsRunning(true);
     try {
-      setReport(await runSchemaCheck(authoring));
+      setReport(await task());
     } catch (error) {
       setReport(error instanceof Error ? error.message : String(error));
     } finally {
@@ -29,22 +36,34 @@ export function SchemaCheck({ authoring }: { authoring: AuthoringClient | null }
   };
 
   return (
-    <details
-      className="section"
-      open={isOpen}
-      onToggle={(event) => setIsOpen((event.target as HTMLDetailsElement).open)}
-    >
+    <details className="section">
       <summary className="section__label" style={{ cursor: "pointer" }}>
-        Schema check
+        Diagnostics
       </summary>
 
       <p className="option__meta">
-        Reports what this environment&apos;s Authoring API accepts. Useful when a
-        copy fails in a way the error message does not explain.
+        Run these when a copy does something you did not expect, and share the
+        output.
       </p>
 
-      <button type="button" className="button" disabled={!authoring || isRunning} onClick={run}>
-        {isRunning ? "Checking…" : "Run schema check"}
+      {trace && (
+        <button
+          type="button"
+          className="button"
+          disabled={!authoring || isRunning}
+          onClick={() => run(() => traceCopy(authoring!, trace))}
+        >
+          {isRunning ? "Working…" : "Trace this copy"}
+        </button>
+      )}
+
+      <button
+        type="button"
+        className="button"
+        disabled={!authoring || isRunning}
+        onClick={() => run(() => runSchemaCheck(authoring!))}
+      >
+        {isRunning ? "Working…" : "Schema check"}
       </button>
 
       {report && (

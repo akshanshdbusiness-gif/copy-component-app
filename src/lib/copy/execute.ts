@@ -36,10 +36,11 @@ export async function executeCopy(
   request: CopyRequest,
   options: ExecuteOptions = {},
 ): Promise<CopyResult[]> {
+  const sourcePagePath = await authoritativePagePath(authoring, request);
   const dataSourcePaths = await resolveDataSourcePaths(
     authoring,
     request.source.subtree,
-    request.source.pagePath,
+    sourcePagePath,
     request.language,
   );
   const results: CopyResult[] = [];
@@ -55,6 +56,7 @@ export async function executeCopy(
       const dataSourceMap = await copyLocalDataSources(
         authoring,
         request,
+        sourcePagePath,
         target.page.itemId,
         target.page.path,
         dataSourcePaths,
@@ -111,6 +113,29 @@ export async function executeCopy(
 function deviceFor(existingXml: string): string {
   const parsed = parseLayoutXml(existingXml);
   return parsed.devices.length > 0 ? primaryDeviceId(parsed) : DEFAULT_DEVICE_ID;
+}
+
+/**
+ * The source page's path as Sitecore knows it.
+ *
+ * `pages.context` reports a `path`, but nothing guarantees it is a content
+ * path rather than a route — and every datasource decision compares against
+ * it, so a route here would classify all of them as "not under this page" and
+ * skip them without an error. The page's own id is unambiguous, so it wins
+ * when it resolves.
+ */
+async function authoritativePagePath(
+  authoring: AuthoringClient,
+  request: CopyRequest,
+): Promise<string> {
+  if (!request.source.pageItemId) return request.source.pagePath;
+  try {
+    const item = await authoring.getItemById(request.source.pageItemId, request.language);
+    if (item?.path) return item.path;
+  } catch {
+    // Fall back to what Pages reported.
+  }
+  return request.source.pagePath;
 }
 
 /** What a lookup produced: a path, or the reason there isn't one. */
@@ -174,6 +199,7 @@ async function resolveDataSourcePaths(
 async function copyLocalDataSources(
   authoring: AuthoringClient,
   request: CopyRequest,
+  sourcePagePath: string,
   targetPageId: string,
   targetPagePath: string,
   dataSourcePaths: Map<string, ResolvedDataSource>,
@@ -188,15 +214,11 @@ async function copyLocalDataSources(
     if (!dataSource || mapping.has(dataSource) || reported.has(dataSource)) continue;
 
     const lookup = dataSourcePaths.get(dataSource);
-    const classification = classifyDataSource(
-      dataSource,
-      request.source.pagePath,
-      lookup?.path,
-    );
+    const classification = classifyDataSource(dataSource, sourcePagePath, lookup?.path);
 
     if (classification.scope !== "local" || !classification.relativePath) {
       reported.add(dataSource);
-      record(explainSkip(dataSource, request.source.pagePath, lookup));
+      record(explainSkip(dataSource, sourcePagePath, lookup));
       continue;
     }
 
@@ -204,6 +226,7 @@ async function copyLocalDataSources(
     const parentId = await ensureFolderChain(
       authoring,
       request,
+      sourcePagePath,
       targetPageId,
       targetPagePath,
       folders,
@@ -272,6 +295,7 @@ function explainSkip(
 async function ensureFolderChain(
   authoring: AuthoringClient,
   request: CopyRequest,
+  sourcePagePath: string,
   targetPageId: string,
   targetPagePath: string,
   folders: string[],
@@ -280,7 +304,7 @@ async function ensureFolderChain(
 ): Promise<string> {
   let parentId = targetPageId;
   let parentPath = targetPagePath;
-  let sourcePath = request.source.pagePath;
+  let sourcePath = sourcePagePath;
 
   for (const folderName of folders) {
     sourcePath = `${sourcePath}/${folderName}`;
