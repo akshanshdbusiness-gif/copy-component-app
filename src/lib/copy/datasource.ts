@@ -1,8 +1,15 @@
 import { isGuid } from "../guid";
 import type { DataSourceClassification } from "../types";
 
-/** /sitecore/templates/Common/Folder — the fallback when the source folder's own template is unknown. */
-export const COMMON_FOLDER_TEMPLATE_ID = "{A87A00B1-E6DB-45AB-8B54-636FEC3B5523}";
+/**
+ * `/sitecore/templates/Foundation/Experience Accelerator/Local Datasources/Page Data`
+ *
+ * The folder SXA puts a page's local datasources in. A plain
+ * `Common/Folder` looks similar in the content tree but is not what SXA
+ * expects under a page, so this is the template a missing `Data` folder is
+ * created from.
+ */
+export const PAGE_DATA_TEMPLATE_ID = "{1C82E550-EBCD-4E5D-8ABD-D50D0809541E}";
 
 /**
  * A datasource is "local" when it lives under the page that renders it — the

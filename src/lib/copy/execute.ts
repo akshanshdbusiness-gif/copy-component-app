@@ -11,7 +11,7 @@ import {
   type RenderingSubtree,
 } from "../types";
 import {
-  COMMON_FOLDER_TEMPLATE_ID,
+  PAGE_DATA_TEMPLATE_ID,
   classifyDataSource,
   needsPathResolution,
   splitRelativePath,
@@ -272,18 +272,21 @@ async function ensureFolderChain(
     if (existing) {
       parentId = existing.itemId;
     } else {
-      const template = await folderTemplateOf(authoring, sourcePath);
+      const { templateId, mirrored } = await folderTemplateOf(authoring, sourcePath);
       const created = await authoring.createItem(
         parentId,
         folderName,
-        template,
+        templateId,
         request.language,
       );
       parentId = created.itemId;
       record({
         kind: "create-folder",
         label: `Created "${folderName}" folder`,
-        detail: created.path,
+        // Name the template: creating this from the wrong one produces a
+        // folder that looks right in the tree but that SXA does not treat as
+        // page data.
+        detail: `${created.path} (${mirrored ? "matching the source folder" : "Page Data"}: ${templateId})`,
       });
     }
 
@@ -294,14 +297,27 @@ async function ensureFolderChain(
   return parentId;
 }
 
-async function folderTemplateOf(authoring: AuthoringClient, sourcePath: string): Promise<string> {
+/**
+ * Which template a missing folder should be created from.
+ *
+ * Mirroring the source page's own folder is preferred — a site using a custom
+ * local-datasource template keeps it that way. SXA's Page Data template is the
+ * fallback when the source folder cannot be read, since that is what a page's
+ * `Data` folder is in a stock XM Cloud site.
+ */
+async function folderTemplateOf(
+  authoring: AuthoringClient,
+  sourcePath: string,
+): Promise<{ templateId: string; mirrored: boolean }> {
   try {
     const item = await authoring.getItem(sourcePath);
-    if (item?.template?.templateId) return item.template.templateId;
+    if (item?.template?.templateId) {
+      return { templateId: item.template.templateId, mirrored: true };
+    }
   } catch {
-    // Fall through to the common folder template.
+    // Fall through to the SXA Page Data template.
   }
-  return COMMON_FOLDER_TEMPLATE_ID;
+  return { templateId: PAGE_DATA_TEMPLATE_ID, mirrored: false };
 }
 
 function allRenderings(subtree: RenderingSubtree): Rendering[] {

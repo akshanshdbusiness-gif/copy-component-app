@@ -171,6 +171,55 @@ describe("executeCopy", () => {
     ]);
   });
 
+  // A Common/Folder looks identical in the content tree but SXA does not treat
+  // it as page data, so the fallback template is pinned here.
+  it("creates the Data folder from SXA's Page Data template when the source folder cannot be read", async () => {
+    const authoring = fakeWithLocalDataSource();
+    authoring.items.delete(`${SOURCE_PAGE}/Data`.toLowerCase());
+    const subtree: RenderingSubtree = {
+      root: rendering({ uid: CONTAINER, dataSource: LOCAL_DS }),
+      descendants: [],
+    };
+
+    await executeCopy(authoring.asClient(), request(subtree));
+
+    expect(authoring.creates).toEqual([
+      {
+        parent: TARGET.itemId,
+        name: "Data",
+        template: "{1C82E550-EBCD-4E5D-8ABD-D50D0809541E}",
+      },
+    ]);
+  });
+
+  it("names the template it used when creating a folder", async () => {
+    const authoring = fakeWithLocalDataSource();
+    authoring.items.delete(`${SOURCE_PAGE}/Data`.toLowerCase());
+    const subtree: RenderingSubtree = {
+      root: rendering({ uid: CONTAINER, dataSource: LOCAL_DS }),
+      descendants: [],
+    };
+
+    const [result] = await executeCopy(authoring.asClient(), request(subtree));
+
+    const created = result.steps.find((s) => s.kind === "create-folder");
+    expect(created?.detail).toContain("{1C82E550-EBCD-4E5D-8ABD-D50D0809541E}");
+    expect(created?.detail).toContain("Page Data");
+  });
+
+  it("copies the datasource into the folder it just created", async () => {
+    const authoring = fakeWithLocalDataSource();
+    const subtree: RenderingSubtree = {
+      root: rendering({ uid: CONTAINER, dataSource: LOCAL_DS }),
+      descendants: [],
+    };
+
+    await executeCopy(authoring.asClient(), request(subtree));
+
+    expect(authoring.creates).toHaveLength(1);
+    expect(authoring.copies[0].parent).toBe("{FOLDER1-0000-0000-0000-000000000000}");
+  });
+
   it("reuses an existing Data folder instead of making a second one", async () => {
     const authoring = fakeWithLocalDataSource();
     authoring.items.set(`${TARGET_PAGE}/Data`.toLowerCase(), {

@@ -37,7 +37,7 @@ placeholder. It is one click away from the component instead of on it.
 
 | Datasource | What happens |
 | --- | --- |
-| Under the page (`<page>/Data/…`) | Deep-copied to the same relative path under the target page. `Data` folder created if missing, using the source folder's own template. Name collisions are suffixed (`Promo` → `Promo-1`), never overwritten. |
+| Under the page (`<page>/Data/…`) | Deep-copied to the same relative path under the target page. `Data` folder created if missing (see below). Name collisions are suffixed (`Promo` → `Promo-1`), never overwritten. |
 | Anywhere else | Left alone — the copy points at the same shared item. |
 | `query:` / `$token` | Left alone. These resolve per-page at render time; copying what they currently point at would be wrong. |
 | Empty | Nothing to do. |
@@ -52,6 +52,22 @@ skip once hid a real bug for a whole release. Unresolvable ones are flagged.
 
 Datasources are stored as `{GUID}` in the layout, so they are looked up by id
 first (`where: { itemId: }`) with a fallback to path.
+
+### The `Data` folder
+
+Target pages often don't have one yet. When it's missing it is created from
+SXA's local-datasource template:
+
+```
+/sitecore/templates/Foundation/Experience Accelerator/Local Datasources/Page Data
+{1C82E550-EBCD-4E5D-8ABD-D50D0809541E}
+```
+
+A plain `Common/Folder` renders identically in the content tree but SXA does
+not treat it as page data, so getting this wrong fails silently and late. The
+source page's own folder template is mirrored when it can be read — a site
+using a custom local-datasource template keeps it — and Page Data is the
+fallback. The result line names which template was used.
 
 ### Containers
 
