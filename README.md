@@ -45,6 +45,14 @@ placeholder. It is one click away from the component instead of on it.
 Two renderings pointing at the same local datasource produce **one** copy that
 both point at.
 
+Every datasource produces a line in the result, including the ones deliberately
+left alone. "Shared, on purpose" and "I could not resolve this, so I left it"
+look identical in the copied page but mean very different things — and a silent
+skip once hid a real bug for a whole release. Unresolvable ones are flagged.
+
+Datasources are stored as `{GUID}` in the layout, so they are looked up by id
+first (`where: { itemId: }`) with a fallback to path.
+
 ### Containers
 
 Picking a container copies the whole nest. Descendants are found by **uid
@@ -136,10 +144,12 @@ The pure logic in `src/lib/` is unit-tested; the Authoring API is stubbed in
 ## Known gaps
 
 - **Partly unverified against a live environment.** Confirmed against a real
-  tenant: `item`, `children { nodes }`, `hasPresentation`, and that `Item` has
-  **no** `presentationDetails` field. Still unconfirmed: the write mutations
-  (`copyItem`, `createItem`, `updateItem` field writes) and the `field(name:)`
-  reads. The first successful copy is where those get proven.
+  tenant: `item`, `children { nodes }`, `hasPresentation`, `field(name:)` reads,
+  and `updateItem` layout writes — a component copies onto another page. Also
+  confirmed: `Item` has **no** `presentationDetails` field. Still unconfirmed:
+  `where: { itemId: }`, `copyItem`, and `createItem`. If `itemId` turns out not
+  to be a valid input field, the datasource lookup falls back to path and the
+  result will say so rather than failing quietly.
 - Child listings fetch the first 100 items per level. A page tree wider than
   that will not show every sibling in the picker, and a `Data` folder holding
   more than 100 items could be given a duplicate name rather than a suffixed

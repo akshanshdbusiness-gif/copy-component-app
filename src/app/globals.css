@@ -250,6 +250,11 @@ body {
   font-size: 11px;
 }
 
+/* A copy that succeeded but left something behind still needs to catch the eye. */
+.step--warn {
+  color: var(--danger);
+}
+
 .field {
   display: flex;
   flex-direction: column;

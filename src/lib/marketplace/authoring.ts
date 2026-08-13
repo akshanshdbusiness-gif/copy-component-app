@@ -53,6 +53,57 @@ export class AuthoringClient {
     return data.item;
   }
 
+  /**
+   * Look an item up by id.
+   *
+   * Datasources are stored as `{GUID}` in the layout, and `where: { path: }`
+   * does not reliably resolve one — which is how local datasources silently
+   * failed to copy. Whether `ItemQueryInput` accepts `itemId` is unverified
+   * against a live schema, so `resolveItem` treats this as the preferred
+   * attempt and falls back rather than betting on it.
+   */
+  async getItemById(itemId: string, language?: string): Promise<ItemRecord | null> {
+    const data = await this.graphql<{ item: ItemRecord | null }>(
+      `query ItemById($itemId: String!, $db: String!, $language: String) {
+        item(where: { database: $db, itemId: $itemId, language: $language }) {
+          itemId
+          name
+          displayName
+          path
+          hasChildren
+          template { templateId name }
+        }
+      }`,
+      { itemId, db: this.database, language },
+    );
+    return data.item;
+  }
+
+  /**
+   * Resolve an item from either form, trying the id query first for guids.
+   * Returns the record and which attempt won, so callers can report *why* a
+   * lookup failed instead of silently treating it as "not mine".
+   */
+  async resolveItem(
+    pathOrId: string,
+    language?: string,
+  ): Promise<{ item: ItemRecord | null; errors: string[] }> {
+    const errors: string[] = [];
+    const attempts: Array<() => Promise<ItemRecord | null>> = looksLikeGuid(pathOrId)
+      ? [() => this.getItemById(pathOrId, language), () => this.getItem(pathOrId, language)]
+      : [() => this.getItem(pathOrId, language)];
+
+    for (const attempt of attempts) {
+      try {
+        const item = await attempt();
+        if (item) return { item, errors };
+      } catch (error) {
+        errors.push(error instanceof Error ? error.message : String(error));
+      }
+    }
+    return { item: null, errors };
+  }
+
   /** Child pages of an item, for the target picker's tree. */
   async getChildren(pathOrId: string, language?: string): Promise<PageSummary[]> {
     const data = await this.graphql<{ item: { children?: { nodes?: ChildRecord[] } } | null }>(
@@ -229,6 +280,10 @@ export interface ItemRecord {
 
 interface ChildRecord extends ItemRecord {
   hasPresentation?: boolean;
+}
+
+function looksLikeGuid(value: string): boolean {
+  return /^[0-9a-fA-F]{32}$/.test(value.replace(/[^0-9a-fA-F]/g, ""));
 }
 
 function describeError(error: unknown): string {

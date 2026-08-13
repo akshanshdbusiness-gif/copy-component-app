@@ -44,8 +44,20 @@ class FakeAuthoring {
   items = new Map<string, { itemId: string; path: string; template?: { templateId: string; name: string } }>();
   children = new Map<string, PageSummary[]>();
 
+  /** Paths resolve here; guids only via resolveItem, mirroring the real schema. */
   async getItem(pathOrId: string) {
+    if (/^\{?[0-9a-fA-F-]{32,38}\}?$/.test(pathOrId)) return null;
     return this.items.get(pathOrId.toLowerCase()) ?? null;
+  }
+
+  async getItemById(itemId: string) {
+    return this.items.get(itemId.toLowerCase()) ?? null;
+  }
+
+  async resolveItem(pathOrId: string) {
+    const byId = await this.getItemById(pathOrId);
+    if (byId) return { item: byId, errors: [] as string[] };
+    return { item: await this.getItem(pathOrId), errors: [] as string[] };
   }
 
   async getChildren(parentId: string) {
@@ -282,6 +294,82 @@ describe("executeCopy", () => {
     expect(results[0].error).toContain("locked");
     expect(results[1].ok).toBe(true);
     expect(authoring.writes).toHaveLength(1);
+  });
+
+  // The regression that made a copy look successful while landing empty.
+  it("resolves a guid datasource by id, not by path", async () => {
+    const authoring = fakeWithLocalDataSource();
+    const subtree: RenderingSubtree = {
+      root: rendering({ uid: CONTAINER, dataSource: LOCAL_DS }),
+      descendants: [],
+    };
+
+    const [result] = await executeCopy(authoring.asClient(), request(subtree));
+
+    expect(authoring.copies).toHaveLength(1);
+    expect(result.steps.some((s) => s.kind === "copy-datasource")).toBe(true);
+  });
+
+  it("reports an unresolvable datasource instead of skipping it silently", async () => {
+    const authoring = new FakeAuthoring(); // knows nothing about LOCAL_DS
+    const subtree: RenderingSubtree = {
+      root: rendering({ uid: CONTAINER, dataSource: LOCAL_DS }),
+      descendants: [],
+    };
+
+    const [result] = await executeCopy(authoring.asClient(), request(subtree));
+
+    expect(result.ok).toBe(true);
+    const skip = result.steps.find((s) => s.kind === "skip-datasource");
+    expect(skip?.warn).toBe(true);
+    expect(skip?.detail).toContain(LOCAL_DS);
+  });
+
+  it("says why a shared datasource was left alone, naming the page it compared against", async () => {
+    const authoring = fakeWithLocalDataSource();
+    const subtree: RenderingSubtree = {
+      root: rendering({ uid: CONTAINER, dataSource: GLOBAL_DS }),
+      descendants: [],
+    };
+
+    const [result] = await executeCopy(authoring.asClient(), request(subtree));
+
+    const skip = result.steps.find((s) => s.kind === "skip-datasource");
+    expect(skip?.warn).toBeUndefined();
+    expect(skip?.detail).toContain(SOURCE_PAGE);
+    expect(skip?.detail).toContain("/sitecore/content/Site/Data/SharedPromo");
+  });
+
+  it("reports a dynamic datasource as deliberately left as-is", async () => {
+    const authoring = fakeWithLocalDataSource();
+    const subtree: RenderingSubtree = {
+      root: rendering({ uid: CONTAINER, dataSource: "query:./Data/*" }),
+      descendants: [],
+    };
+
+    const [result] = await executeCopy(authoring.asClient(), request(subtree));
+
+    const skip = result.steps.find((s) => s.kind === "skip-datasource");
+    expect(skip?.label).toContain("Dynamic");
+    expect(authoring.copies).toHaveLength(0);
+  });
+
+  it("reports each distinct datasource once, not once per rendering", async () => {
+    const authoring = fakeWithLocalDataSource();
+    const subtree: RenderingSubtree = {
+      root: rendering({ uid: CONTAINER, dataSource: GLOBAL_DS }),
+      descendants: [
+        rendering({
+          uid: CHILD,
+          dataSource: GLOBAL_DS,
+          placeholderKey: `/headless-main/container-1-${CONTAINER}-0`,
+        }),
+      ],
+    };
+
+    const [result] = await executeCopy(authoring.asClient(), request(subtree));
+
+    expect(result.steps.filter((s) => s.kind === "skip-datasource")).toHaveLength(1);
   });
 
   it("writes against the language the author is editing", async () => {

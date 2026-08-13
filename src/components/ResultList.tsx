@@ -33,7 +33,8 @@ export function ResultList({ results }: { results: CopyResult[] }) {
           {result.steps.length > 0 && (
             <ul className="result__steps">
               {result.steps.map((step, index) => (
-                <li key={`${step.kind}-${index}`}>
+                <li key={`${step.kind}-${index}`} className={step.warn ? "step--warn" : undefined}>
+                  {step.warn && "⚠ "}
                   {step.label}
                   {step.detail && <span className="option__meta"> — {step.detail}</span>}
                 </li>

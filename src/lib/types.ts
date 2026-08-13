@@ -71,11 +71,18 @@ export interface CopyRequest {
   language: string;
 }
 
-/** One unit of work in an executed copy — surfaced to the author as a progress line. */
+/**
+ * One unit of work in an executed copy — surfaced to the author as a progress
+ * line. Datasources that are deliberately *not* copied get a step too: a
+ * silent skip is indistinguishable from a bug, which is exactly how a
+ * misresolved datasource hid itself once already.
+ */
 export interface CopyStep {
-  kind: "create-folder" | "copy-datasource" | "write-layout";
+  kind: "create-folder" | "copy-datasource" | "skip-datasource" | "write-layout";
   label: string;
   detail?: string;
+  /** Marks a step the author probably wants to look at, without failing the copy. */
+  warn?: boolean;
 }
 
 export interface CopyResult {

@@ -107,12 +107,25 @@ function deviceFor(existingXml: string): string {
   return parsed.devices.length > 0 ? primaryDeviceId(parsed) : DEFAULT_DEVICE_ID;
 }
 
-/** Resolve id-form datasources to paths once, so classification can compare against the page path. */
+/** What a lookup produced: a path, or the reason there isn't one. */
+interface ResolvedDataSource {
+  path?: string;
+  failure?: string;
+}
+
+/**
+ * Resolve id-form datasources to paths once, so classification can compare
+ * against the page path.
+ *
+ * A failure here used to be swallowed, which made the datasource classify as
+ * shared and get skipped without a word — the copy looked like it worked and
+ * simply had no content. Failures are now carried through to the report.
+ */
 async function resolveDataSourcePaths(
   authoring: AuthoringClient,
   subtree: RenderingSubtree,
-): Promise<Map<string, string>> {
-  const resolved = new Map<string, string>();
+): Promise<Map<string, ResolvedDataSource>> {
+  const resolved = new Map<string, ResolvedDataSource>();
   const pending = new Set(
     allRenderings(subtree)
       .map((r) => r.dataSource)
@@ -120,12 +133,13 @@ async function resolveDataSourcePaths(
   );
 
   for (const dataSource of pending) {
-    try {
-      const item = await authoring.getItem(dataSource);
-      if (item?.path) resolved.set(dataSource, item.path);
-    } catch {
-      // Leave unresolved — classifyDataSource treats that as shared and
-      // points the copy at the original, which is the safe outcome.
+    const { item, errors } = await authoring.resolveItem(dataSource);
+    if (item?.path) {
+      resolved.set(dataSource, { path: item.path });
+    } else {
+      resolved.set(dataSource, {
+        failure: errors.length > 0 ? errors.join("; ") : "no item found with that id",
+      });
     }
   }
   return resolved;
@@ -137,22 +151,29 @@ async function copyLocalDataSources(
   request: CopyRequest,
   targetPageId: string,
   targetPagePath: string,
-  dataSourcePaths: Map<string, string>,
+  dataSourcePaths: Map<string, ResolvedDataSource>,
   record: (step: CopyStep) => void,
 ): Promise<Map<string, string>> {
   const mapping = new Map<string, string>();
   const folderCache = new Map<string, string>();
+  const reported = new Set<string>();
 
   for (const rendering of allRenderings(request.source.subtree)) {
     const dataSource = rendering.dataSource;
-    if (!dataSource || mapping.has(dataSource)) continue;
+    if (!dataSource || mapping.has(dataSource) || reported.has(dataSource)) continue;
 
+    const lookup = dataSourcePaths.get(dataSource);
     const classification = classifyDataSource(
       dataSource,
       request.source.pagePath,
-      dataSourcePaths.get(dataSource),
+      lookup?.path,
     );
-    if (classification.scope !== "local" || !classification.relativePath) continue;
+
+    if (classification.scope !== "local" || !classification.relativePath) {
+      reported.add(dataSource);
+      record(explainSkip(dataSource, request.source.pagePath, lookup));
+      continue;
+    }
 
     const { folders, name } = splitRelativePath(classification.relativePath);
     const parentId = await ensureFolderChain(
@@ -178,6 +199,44 @@ async function copyLocalDataSources(
   }
 
   return mapping;
+}
+
+/**
+ * Say why a datasource was left pointing at the original.
+ *
+ * "Shared, on purpose" and "I could not tell, so I left it alone" look
+ * identical in the copied page but mean very different things, so they read
+ * differently here — and the unresolvable case carries the page path it was
+ * compared against, which is what makes a wrong path obvious at a glance.
+ */
+function explainSkip(
+  dataSource: string,
+  sourcePagePath: string,
+  lookup: ResolvedDataSource | undefined,
+): CopyStep {
+  if (lookup?.failure) {
+    return {
+      kind: "skip-datasource",
+      label: "Could not resolve a datasource — left pointing at the original",
+      detail: `${dataSource} (${lookup.failure})`,
+      warn: true,
+    };
+  }
+
+  if (/^(query:|\$)/i.test(dataSource.trim())) {
+    return {
+      kind: "skip-datasource",
+      label: "Dynamic datasource left as-is",
+      detail: dataSource,
+    };
+  }
+
+  const path = lookup?.path ?? dataSource;
+  return {
+    kind: "skip-datasource",
+    label: "Shared datasource left pointing at the original",
+    detail: `${path} is not under ${sourcePagePath}`,
+  };
 }
 
 /**
