@@ -51,7 +51,14 @@ export function PlaceholderPrompt({
           <div key={page.itemId} className="result">
             <span className="option__name">{page.displayName}</span>
 
-            {error && <p className="notice notice--error">{error}</p>}
+            {/* A failed read is not a blocker: the copy can still go ahead
+                using the source key, so say that rather than dead-ending. */}
+            {error && (
+              <p className="notice notice--error">
+                Could not read this page&apos;s placeholders, so they cannot be listed.
+                You can still copy into <strong>{sourceKey}</strong>. {error}
+              </p>
+            )}
 
             {!error && available.length === 0 && (
               <p className="option__meta">

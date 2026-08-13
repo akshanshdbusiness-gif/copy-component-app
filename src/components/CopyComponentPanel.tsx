@@ -8,6 +8,7 @@ import { ResultList } from "./ResultList";
 import { executeCopy } from "@/src/lib/copy/execute";
 import { findSiteRoot } from "@/src/lib/copy/site-root";
 import { collectSubtree, parsePresentationDetails } from "@/src/lib/layout/presentation";
+import { resolveLayout } from "@/src/lib/layout/merge";
 import { keysEqual, usedPlaceholderKeys } from "@/src/lib/layout/placeholders";
 import { AuthoringClient } from "@/src/lib/marketplace/authoring";
 import { useMarketplaceClient } from "@/src/lib/marketplace/useMarketplaceClient";
@@ -34,7 +35,8 @@ export function CopyComponentPanel() {
   const [placeholdersLoading, setPlaceholdersLoading] = useState(false);
   const [names, setNames] = useState<Map<string, string>>(new Map());
   const [siteRoot, setSiteRoot] = useState<string | null>(null);
-  const [fetchedDetails, setFetchedDetails] = useState<string | null>(null);
+  const [fetchedRenderings, setFetchedRenderings] = useState<Rendering[]>([]);
+  const [layoutError, setLayoutError] = useState<string | null>(null);
   const [results, setResults] = useState<CopyResult[]>([]);
   const [runError, setRunError] = useState<string | null>(null);
 
@@ -43,25 +45,28 @@ export function CopyComponentPanel() {
     [client, contextId],
   );
 
-  const renderings: Rendering[] = useMemo(
-    () => parsePresentationDetails(context?.presentationDetails ?? fetchedDetails),
-    [context?.presentationDetails, fetchedDetails],
-  );
+  const renderings: Rendering[] = useMemo(() => {
+    const fromPages = parsePresentationDetails(context?.presentationDetails);
+    return fromPages.length > 0 ? fromPages : fetchedRenderings;
+  }, [context?.presentationDetails, fetchedRenderings]);
 
   // `pages.context` usually carries the page's presentation, but the field is
   // typed loosely and is not guaranteed to be populated. Falling back to the
   // Authoring API keeps the panel from claiming a page has no components when
   // it simply was not told about them.
   useEffect(() => {
-    if (!authoring || !context?.pagePath || context.presentationDetails) return;
+    if (!authoring || !context?.pagePath) return;
+    if (parsePresentationDetails(context.presentationDetails).length > 0) return;
     let active = true;
     authoring
-      .getPresentationDetails(context.pagePath, context.language)
-      .then((details) => {
-        if (active) setFetchedDetails(details);
+      .getLayoutFields(context.pagePath, context.language)
+      .then(({ shared, final }) => {
+        if (active) setFetchedRenderings(resolveLayout(shared, final));
       })
-      .catch(() => {
-        if (active) setFetchedDetails(null);
+      .catch((error: unknown) => {
+        if (!active) return;
+        setFetchedRenderings([]);
+        setLayoutError(error instanceof Error ? error.message : String(error));
       });
     return () => {
       active = false;
@@ -136,7 +141,8 @@ export function CopyComponentPanel() {
     setChoices({});
     setResults([]);
     setRunError(null);
-    setFetchedDetails(null);
+    setFetchedRenderings([]);
+    setLayoutError(null);
   }, [context?.pageId, context?.language]);
 
   const loadPlaceholders = useCallback(async () => {
@@ -150,8 +156,8 @@ export function CopyComponentPanel() {
 
     for (const page of targets) {
       try {
-        const details = await authoring.getPresentationDetails(page.path, context?.language);
-        const available = usedPlaceholderKeys(parsePresentationDetails(details));
+        const { shared, final } = await authoring.getLayoutFields(page.path, context?.language);
+        const available = usedPlaceholderKeys(resolveLayout(shared, final));
         const sameKeyExists = available.some((key) => keysEqual(key, sourceKey));
         loaded.push({ page, available, sameKeyExists });
         // Default to the source key where it exists — that is the "same
@@ -255,6 +261,12 @@ export function CopyComponentPanel() {
       {!context.canWrite && (
         <p className="notice notice--error">
           You have read-only access to this page.
+        </p>
+      )}
+
+      {layoutError && renderings.length === 0 && (
+        <p className="notice notice--error">
+          Could not read this page&apos;s layout. {layoutError}
         </p>
       )}
 

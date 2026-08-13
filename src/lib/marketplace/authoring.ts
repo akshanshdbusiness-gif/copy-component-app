@@ -117,17 +117,32 @@ export class AuthoringClient {
     return names;
   }
 
-  /** Resolved layout, used to list a target page's usable placeholders. */
-  async getPresentationDetails(pathOrId: string, language?: string): Promise<string> {
-    const data = await this.graphql<{ item: { presentationDetails?: string } | null }>(
-      `query Presentation($path: String!, $db: String!, $language: String) {
+  /**
+   * Both layout fields for a page, read in one round trip.
+   *
+   * There is no `presentationDetails` field on `Item` in the Authoring schema —
+   * asking for one fails the whole query with "The field `presentationDetails`
+   * does not exist on the type `Item`". The layout has to be read as the two
+   * raw fields Sitecore actually stores: `__Renderings` is the shared layout
+   * (inherited through standard values) and `__Final Renderings` is the
+   * versioned delta on top of it.
+   */
+  async getLayoutFields(pathOrId: string, language?: string): Promise<LayoutFields> {
+    const data = await this.graphql<{
+      item: { shared?: { value?: string } | null; final?: { value?: string } | null } | null;
+    }>(
+      `query Layout($path: String!, $db: String!, $language: String) {
         item(where: { database: $db, path: $path, language: $language }) {
-          presentationDetails
+          shared: field(name: "__Renderings") { value }
+          final: field(name: "__Final Renderings") { value }
         }
       }`,
       { path: pathOrId, db: this.database, language },
     );
-    return data.item?.presentationDetails ?? "";
+    return {
+      shared: data.item?.shared?.value ?? "",
+      final: data.item?.final?.value ?? "",
+    };
   }
 
   /** The raw `__Final Renderings` delta — what we append to and write back. */
@@ -194,6 +209,13 @@ export class AuthoringClient {
     );
     return data.createItem.item;
   }
+}
+
+export interface LayoutFields {
+  /** `__Renderings` — the shared layout, inherited through standard values. */
+  shared: string;
+  /** `__Final Renderings` — the versioned delta applied on top of the shared layout. */
+  final: string;
 }
 
 export interface ItemRecord {

@@ -3,12 +3,17 @@ import type { Rendering, RenderingSubtree } from "../types";
 import { parseLayoutXml, renderingsForDevice } from "./layout-xml";
 
 /**
- * `presentationDetails` is the *resolved* layout (shared + final merged), which
- * is what the picker needs — a component inherited from standard values is
- * absent from the final-renderings delta but is very much on the page.
+ * Parse the `presentationDetails` that `pages.context` hands the panel — the
+ * resolved layout (shared + final merged), which is what the picker needs: a
+ * component inherited from standard values is absent from the final-renderings
+ * delta but is very much on the page.
  *
- * Pages and the Authoring API have both been observed handing this back as a
- * JSON string and as raw XML, so accept either rather than betting on one.
+ * This is the *SDK's* payload only. The Authoring GraphQL schema has no such
+ * field on `Item` (see `AuthoringClient.getLayoutFields`); that path reads the
+ * two raw layout fields and merges them via `resolveLayout`.
+ *
+ * The payload has been seen as both a JSON string and raw XML, so accept
+ * either rather than betting on one.
  */
 export function parsePresentationDetails(
   details: string | Record<string, unknown> | null | undefined,

@@ -76,6 +76,15 @@ author is editing.
 processed independently and each reports its own outcome. A failure on page
 three leaves pages one and two copied and says so.
 
+**The layout is resolved client-side.** The Authoring API exposes no
+pre-resolved layout — there is no `presentationDetails` field on `Item`, and
+asking for one fails the whole query. So the two stored fields are read
+directly and merged in `src/lib/layout/merge.ts`: `__Renderings` is the base
+(already inherited through standard values by the field read) and
+`__Final Renderings` is a patch on top. A patch entry may carry only the
+attributes that changed, so attributes are overlaid one at a time — swapping
+whole entries would read an unchanged datasource as empty.
+
 **Placeholder list = placeholders in use.** Sitecore only records a placeholder
 once something sits in it, so a target page with an empty placeholder cannot
 advertise it. When a target has no components at all, the copy uses the source
@@ -126,11 +135,11 @@ The pure logic in `src/lib/` is unit-tested; the Authoring API is stubbed in
 
 ## Known gaps
 
-- **Unverified against a live environment.** The Authoring GraphQL mutation
-  shapes (`copyItem`, `createItem`, `updateItem` field writes) and the exact
-  encoding of `presentationDetails` are written from the documented API. Both
-  the JSON and XML forms of `presentationDetails` are handled defensively, but
-  the first run against a real tenant is where this gets confirmed.
+- **Partly unverified against a live environment.** Confirmed against a real
+  tenant: `item`, `children { nodes }`, `hasPresentation`, and that `Item` has
+  **no** `presentationDetails` field. Still unconfirmed: the write mutations
+  (`copyItem`, `createItem`, `updateItem` field writes) and the `field(name:)`
+  reads. The first successful copy is where those get proven.
 - Child listings fetch the first 100 items per level. A page tree wider than
   that will not show every sibling in the picker, and a `Data` folder holding
   more than 100 items could be given a duplicate name rather than a suffixed
