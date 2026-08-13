@@ -50,15 +50,17 @@ left alone. "Shared, on purpose" and "I could not resolve this, so I left it"
 look identical in the copied page but mean very different things — and a silent
 skip once hid a real bug for a whole release. Unresolvable ones are flagged.
 
-**Locality is decided by walking down, not by looking up.** Datasources are
-stored as `{GUID}` in the layout, and deciding whether one is the page's own
-would naturally mean resolving that guid to a path and comparing. Repeated
-guesses at how this schema spells an id-based item query were all wrong, and
-each failure classified the datasource as shared and skipped it. So
+**Guid variables must be declared `ID`, not `String`.** `ItemQueryInput.itemId`
+is typed `ID`, and a variable declared `String!` fails GraphQL *variable
+validation* before the query runs. That produced no item rather than an obvious
+error, so every datasource silently reclassified as shared and was skipped —
+the single bug behind "the component copies but its datasource doesn't". The
+same mismatch was leaving every component labelled "Component" in the picker.
+
 `src/lib/copy/local-items.ts` walks *down* from the page with
-`children { nodes }` — proven to work — and membership becomes an id lookup in
-a map. No id-to-path query is involved. Child pages are skipped: their
-datasources are their own, and descending into them would walk the whole site.
+`children { nodes }` and is kept as a fallback for when an id lookup returns
+nothing, built lazily so the common path stays one query. Child pages are
+skipped: their datasources are their own, and descending would walk the site.
 
 ### The `Data` folder
 
@@ -175,13 +177,11 @@ the error does not explain, run it and read the real field list.
 
 ## Known gaps
 
-- **Partly unverified against a live environment.** Confirmed against a real
-  tenant: `item`, `children { nodes }`, `hasPresentation`, `field(name:)` reads,
-  and `updateItem` layout writes — a component copies onto another page. Also
-  confirmed: `Item` has **no** `presentationDetails` field. Still unconfirmed:
-  `where: { itemId: }`, `copyItem`, and `createItem`. If `itemId` turns out not
-  to be a valid input field, the datasource lookup falls back to path and the
-  result will say so rather than failing quietly.
+- **Write mutations still unproven end to end.** The schema is now known from
+  introspection against a real tenant rather than guessed, and the input shapes
+  match it. `updateItem` layout writes are confirmed working. `copyItem` and
+  `createItem` are built to the tenant's own `CopyItemInput` / `CreateItemInput`
+  but have not yet completed a successful run.
 - Child listings fetch the first 100 items per level. A page tree wider than
   that will not show every sibling in the picker, and a `Data` folder holding
   more than 100 items could be given a duplicate name rather than a suffixed

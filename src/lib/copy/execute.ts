@@ -141,25 +141,30 @@ async function resolveDataSourcePaths(
   );
   if (pending.size === 0) return resolved;
 
-  // Walking down from the page settles the only question that matters — is
-  // this datasource the page's own? — without an id-to-path query.
-  const localItems = await mapLocalItems(authoring, sourcePagePath, language);
+  // Built only if an id lookup comes up empty — walking the page's subtree
+  // costs a query per level, so it stays a fallback rather than the default.
+  let localItems: Map<string, string> | null = null;
+  const walkedItems = async () => {
+    localItems ??= await mapLocalItems(authoring, sourcePagePath, language);
+    return localItems;
+  };
 
   for (const dataSource of pending) {
-    const localPath = localItems.get(normalizeGuid(dataSource));
-    if (localPath) {
-      resolved.set(dataSource, { path: localPath });
+    const { item, errors } = await authoring.resolveItem(dataSource);
+    if (item?.path) {
+      resolved.set(dataSource, { path: item.path });
       continue;
     }
 
-    // Not under the page. Look it up anyway so the report can name where it
-    // does live — but a failure here is now cosmetic, not a lost copy.
-    const { item, errors } = await authoring.resolveItem(dataSource);
+    // The id query found nothing. Before calling it shared — the answer that
+    // silently skipped local datasources for three releases — look for it
+    // under the page directly.
+    const localPath = (await walkedItems()).get(normalizeGuid(dataSource));
     resolved.set(
       dataSource,
-      item?.path
-        ? { path: item.path }
-        : { failure: errors.length > 0 ? errors.join("; ") : "not found under the page" },
+      localPath
+        ? { path: localPath }
+        : { failure: errors.length > 0 ? errors.join("; ") : "no item found with that id" },
     );
   }
   return resolved;

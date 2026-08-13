@@ -56,15 +56,14 @@ export class AuthoringClient {
   /**
    * Look an item up by id.
    *
-   * Datasources are stored as `{GUID}` in the layout, and `where: { path: }`
-   * does not reliably resolve one — which is how local datasources silently
-   * failed to copy. Whether `ItemQueryInput` accepts `itemId` is unverified
-   * against a live schema, so `resolveItem` treats this as the preferred
-   * attempt and falls back rather than betting on it.
+   * `ItemQueryInput.itemId` is typed `ID`, so the variable must be declared
+   * `ID!` — declaring it `String!` fails GraphQL variable validation before
+   * the query ever runs, which is what made every id lookup here look like a
+   * missing item and silently reclassify local datasources as shared.
    */
   async getItemById(itemId: string, language?: string): Promise<ItemRecord | null> {
     const data = await this.graphql<{ item: ItemRecord | null }>(
-      `query ItemById($itemId: String!, $db: String!, $language: String) {
+      `query ItemById($itemId: ID!, $db: String!, $language: String) {
         item(where: { database: $db, itemId: $itemId, language: $language }) {
           itemId
           name
@@ -146,10 +145,13 @@ export class AuthoringClient {
     const unique = [...new Set(itemIds.filter(Boolean))];
     if (unique.length === 0) return new Map();
 
+    // Rendering ids are guids, so these go through `itemId` (typed `ID`), not
+    // `path` — the same mismatch that broke datasource lookups was quietly
+    // leaving every component labelled "Component" in the picker.
     const fields = unique
-      .map((_, index) => `i${index}: item(where: { database: $db, path: $id${index} }) { itemId name displayName }`)
+      .map((_, index) => `i${index}: item(where: { database: $db, itemId: $id${index} }) { itemId name displayName }`)
       .join("\n");
-    const args = unique.map((_, index) => `$id${index}: String!`).join(", ");
+    const args = unique.map((_, index) => `$id${index}: ID!`).join(", ");
     const variables: Record<string, unknown> = { db: this.database };
     unique.forEach((id, index) => {
       variables[`id${index}`] = id;
@@ -225,11 +227,23 @@ export class AuthoringClient {
     );
   }
 
-  /** Deep copy — Sitecore's copy takes the whole subtree with it, which is what we want. */
+  /**
+   * Deep copy — the datasource's own children come with it.
+   *
+   * Field names here are from the tenant's own `CopyItemInput`: the target is
+   * `targetParentId` (not `targetId`) and the new name is `copyItemName` (not
+   * `name`). `deepCopy` is passed explicitly rather than relying on a default.
+   */
   async copyItem(sourceId: string, targetParentId: string, name: string): Promise<ItemRecord> {
     const data = await this.graphql<{ copyItem: { item: ItemRecord } }>(
       `mutation CopyItem($source: ID!, $target: ID!, $name: String!, $db: String!) {
-        copyItem(input: { database: $db, itemId: $source, targetId: $target, name: $name }) {
+        copyItem(input: {
+          database: $db
+          itemId: $source
+          targetParentId: $target
+          copyItemName: $name
+          deepCopy: true
+        }) {
           item { itemId name displayName path hasChildren template { templateId name } }
         }
       }`,
