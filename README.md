@@ -37,7 +37,8 @@ placeholder. It is one click away from the component instead of on it.
 
 | Datasource | What happens |
 | --- | --- |
-| Under the page (`<page>/Data/…`) | Deep-copied to the same relative path under the target page. `Data` folder created if missing (see below). Name collisions are suffixed (`Promo` → `Promo-1`), never overwritten. |
+| Page-relative (`local:/Data/Promo`) | The form XM Cloud actually writes. Local by definition — the prefix means "under the page rendering this". Deep-copied to the same relative path under the target, and the value is left page-relative so it resolves against the target's own copy. |
+| Under the page by path or id (`<page>/Data/…`) | Deep-copied to the same relative path under the target page. `Data` folder created if missing (see below). Name collisions are suffixed (`Promo` → `Promo-1`), never overwritten. |
 | Anywhere else | Left alone — the copy points at the same shared item. |
 | `query:` / `$token` | Left alone. These resolve per-page at render time; copying what they currently point at would be wrong. |
 | Empty | Nothing to do. |
@@ -49,6 +50,15 @@ Every datasource produces a line in the result, including the ones deliberately
 left alone. "Shared, on purpose" and "I could not resolve this, so I left it"
 look identical in the copied page but mean very different things — and a silent
 skip once hid a real bug for a whole release. Unresolvable ones are flagged.
+
+**`local:` is a datasource scheme, not a path.** XM Cloud stores a page's own
+datasources as `local:/Data/Promo` — resolved against whichever page renders
+the component. Treating that as an ordinary path classified the *most* local
+kind of datasource as shared and skipped it. Two consequences worth knowing:
+the copy source has to be resolved against the source page before `copyItem`
+can take it, and the stored value is deliberately left page-relative afterwards
+so it points at the target's own copy with no rewriting — except when a name
+collision renamed the copy, which is the one case the value must be rebuilt.
 
 **Guid variables must be declared `ID`, not `String`.** `ItemQueryInput.itemId`
 is typed `ID`, and a variable declared `String!` fails GraphQL *variable

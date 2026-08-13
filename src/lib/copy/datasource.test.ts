@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildLocalDataSource,
   classifyDataSource,
+  localSchemeRelativePath,
   needsPathResolution,
   relativeUnder,
   splitRelativePath,
@@ -31,6 +33,28 @@ describe("classifyDataSource", () => {
     expect(classifyDataSource("{DDDDDDDD-0000-0000-0000-000000000000}", PAGE).scope).toBe("global");
   });
 
+  // XM Cloud writes page-relative datasources with a `local:` prefix. Treating
+  // one as shared skipped the most local kind of datasource there is.
+  it("treats a local: datasource as local without needing a lookup", () => {
+    expect(classifyDataSource("local:/Data/Promo", PAGE)).toEqual({
+      scope: "local",
+      relativePath: "Data/Promo",
+    });
+  });
+
+  it("accepts the local: prefix with or without the slash, and any casing", () => {
+    expect(classifyDataSource("local:Data/Promo", PAGE).relativePath).toBe("Data/Promo");
+    expect(classifyDataSource("LOCAL:/Data/Promo", PAGE).relativePath).toBe("Data/Promo");
+  });
+
+  it("handles a local: datasource nested below the Data folder", () => {
+    expect(classifyDataSource("local:/Data/Cards/One", PAGE).relativePath).toBe("Data/Cards/One");
+  });
+
+  it("does not treat an empty local: value as local", () => {
+    expect(classifyDataSource("local:/", PAGE).scope).toBe("global");
+  });
+
   it("never copies query or token datasources", () => {
     expect(classifyDataSource("query:./Data/*", PAGE).scope).toBe("global");
     expect(classifyDataSource("$site/Data/Promo", PAGE).scope).toBe("global");
@@ -53,6 +77,24 @@ describe("classifyDataSource", () => {
 
   it("compares paths case-insensitively, as Sitecore does", () => {
     expect(classifyDataSource(`${PAGE.toUpperCase()}/Data/Promo`, PAGE).scope).toBe("local");
+  });
+});
+
+describe("localSchemeRelativePath / buildLocalDataSource", () => {
+  it("round-trips a page-relative value", () => {
+    const relative = localSchemeRelativePath("local:/Data/Promo");
+    expect(relative).toBe("Data/Promo");
+    expect(buildLocalDataSource(["Data"], "Promo")).toBe("local:/Data/Promo");
+  });
+
+  it("returns null for values that are not page-relative", () => {
+    expect(localSchemeRelativePath("/sitecore/content/x")).toBeNull();
+    expect(localSchemeRelativePath("{DDDDDDDD-0000-0000-0000-000000000000}")).toBeNull();
+    expect(localSchemeRelativePath("")).toBeNull();
+  });
+
+  it("rebuilds a nested path", () => {
+    expect(buildLocalDataSource(["Data", "Cards"], "One")).toBe("local:/Data/Cards/One");
   });
 });
 

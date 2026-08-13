@@ -25,6 +25,13 @@ export function classifyDataSource(
   const value = (dataSource ?? "").trim();
   if (!value) return { scope: "none" };
 
+  // `local:/Data/Promo` is XM Cloud's page-relative datasource: the prefix
+  // means "under the page rendering this", so it is local by definition and
+  // needs no lookup to prove it. Missing this classified the *most* local kind
+  // of datasource as shared.
+  const pageRelative = localSchemeRelativePath(value);
+  if (pageRelative) return { scope: "local", relativePath: pageRelative };
+
   // Sitecore query and token datasources resolve per-page at render time —
   // copying whatever they happen to point at right now would be wrong.
   if (/^(query:|\$)/i.test(value)) return { scope: "global" };
@@ -38,6 +45,23 @@ export function classifyDataSource(
 
   const relative = relativeUnder(path, sourcePagePath);
   return relative ? { scope: "local", relativePath: relative } : { scope: "global" };
+}
+
+/**
+ * `local:/Data/Promo` -> `Data/Promo`; null when the value is not page-relative.
+ *
+ * The prefix has been seen with and without the slash after the colon, so both
+ * are accepted.
+ */
+export function localSchemeRelativePath(dataSource: string): string | null {
+  const match = /^local:\/*(.+)$/i.exec((dataSource ?? "").trim());
+  const relative = match?.[1]?.replace(/^\/+|\/+$/g, "");
+  return relative ? relative : null;
+}
+
+/** Rebuild a page-relative value, e.g. ["Data"] + "Promo" -> `local:/Data/Promo`. */
+export function buildLocalDataSource(folders: string[], name: string): string {
+  return `local:/${[...folders, name].join("/")}`;
 }
 
 /** "…/home/about" + "…/home" -> "about"; null when `path` is not underneath `ancestor`. */

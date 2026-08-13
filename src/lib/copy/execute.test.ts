@@ -345,6 +345,75 @@ describe("executeCopy", () => {
     expect(authoring.writes).toHaveLength(1);
   });
 
+  // The datasource form XM Cloud actually writes, which the trace surfaced.
+  describe("page-relative (local:) datasources", () => {
+    const LOCAL_SCHEME = "local:/Data/Promo";
+
+    function subtreeWithLocalScheme(): RenderingSubtree {
+      return {
+        root: rendering({ uid: CONTAINER, dataSource: LOCAL_SCHEME }),
+        descendants: [],
+      };
+    }
+
+    it("copies it, resolving the source against the source page", async () => {
+      const authoring = fakeWithLocalDataSource();
+
+      const [result] = await executeCopy(authoring.asClient(), request(subtreeWithLocalScheme()));
+
+      expect(result.ok).toBe(true);
+      expect(authoring.copies).toHaveLength(1);
+      expect(authoring.copies[0].source).toBe(`${SOURCE_PAGE}/Data/Promo`);
+      expect(authoring.copies[0].name).toBe("Promo");
+    });
+
+    it("leaves the value page-relative so it resolves against the target", async () => {
+      const authoring = fakeWithLocalDataSource();
+
+      await executeCopy(authoring.asClient(), request(subtreeWithLocalScheme()));
+
+      const written = parseLayoutXml(authoring.writes[0].value).devices[0].renderings;
+      expect(written[0].dataSource).toBe("local:/Data/Promo");
+    });
+
+    // The one case where the value must change: pointing at the pre-existing
+    // item instead of our copy would silently share content between pages.
+    it("rewrites the value when a collision renamed the copy", async () => {
+      const authoring = fakeWithLocalDataSource();
+      authoring.items.set(`${TARGET_PAGE}/Data`.toLowerCase(), {
+        itemId: "{TGTDATA0-0000-0000-0000-000000000000}",
+        path: `${TARGET_PAGE}/Data`,
+      });
+      authoring.children.set("{TGTDATA0-0000-0000-0000-000000000000}", [
+        { ...TARGET, name: "Promo", displayName: "Promo", path: `${TARGET_PAGE}/Data/Promo` },
+      ]);
+
+      await executeCopy(authoring.asClient(), request(subtreeWithLocalScheme()));
+
+      expect(authoring.copies[0].name).toBe("Promo-1");
+      const written = parseLayoutXml(authoring.writes[0].value).devices[0].renderings;
+      expect(written[0].dataSource).toBe("local:/Data/Promo-1");
+    });
+
+    it("creates the Data folder under the target when it is missing", async () => {
+      const authoring = fakeWithLocalDataSource();
+
+      await executeCopy(authoring.asClient(), request(subtreeWithLocalScheme()));
+
+      expect(authoring.creates).toHaveLength(1);
+      expect(authoring.creates[0].name).toBe("Data");
+    });
+
+    it("does not report it as skipped", async () => {
+      const authoring = fakeWithLocalDataSource();
+
+      const [result] = await executeCopy(authoring.asClient(), request(subtreeWithLocalScheme()));
+
+      expect(result.steps.some((s) => s.kind === "skip-datasource")).toBe(false);
+      expect(result.steps.some((s) => s.kind === "copy-datasource")).toBe(true);
+    });
+  });
+
   // The real-world failure: the tenant's schema would not resolve a guid by
   // any spelling we tried, so classification had to stop depending on it.
   it("finds a local datasource by walking down from the page when id lookup is unavailable", async () => {

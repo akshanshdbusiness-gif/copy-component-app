@@ -13,7 +13,9 @@ import {
 import { mapLocalItems } from "./local-items";
 import {
   PAGE_DATA_TEMPLATE_ID,
+  buildLocalDataSource,
   classifyDataSource,
+  localSchemeRelativePath,
   needsPathResolution,
   splitRelativePath,
   uniqueName,
@@ -236,9 +238,22 @@ async function copyLocalDataSources(
 
     const siblings = await authoring.getChildren(parentId, request.language);
     const copyName = uniqueName(name, siblings.map((s) => s.name));
-    const copied = await authoring.copyItem(dataSource, parentId, copyName);
 
-    mapping.set(dataSource, copied.itemId);
+    // `local:/Data/Promo` is not something the API can copy from — resolve it
+    // against the source page to get a real path first.
+    const isPageRelative = localSchemeRelativePath(dataSource) !== null;
+    const copySource = isPageRelative
+      ? `${sourcePagePath}/${classification.relativePath}`
+      : dataSource;
+    const copied = await authoring.copyItem(copySource, parentId, copyName);
+
+    // A page-relative value resolves against whichever page renders it, so the
+    // copy points at the target's own item with no rewriting — unless a name
+    // collision renamed it, which is exactly when the value must be rebuilt.
+    mapping.set(
+      dataSource,
+      isPageRelative ? buildLocalDataSource(folders, copyName) : copied.itemId,
+    );
     record({
       kind: "copy-datasource",
       label: `Copied datasource "${name}"${copyName === name ? "" : ` as "${copyName}"`}`,

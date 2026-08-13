@@ -234,12 +234,15 @@ export class AuthoringClient {
    * `targetParentId` (not `targetId`) and the new name is `copyItemName` (not
    * `name`). `deepCopy` is passed explicitly rather than relying on a default.
    */
-  async copyItem(sourceId: string, targetParentId: string, name: string): Promise<ItemRecord> {
+  async copyItem(source: string, targetParentId: string, name: string): Promise<ItemRecord> {
+    // CopyItemInput accepts either locator; a page-relative datasource resolves
+    // to a path, so send whichever form the caller actually has.
+    const byId = looksLikeGuid(source);
     const data = await this.graphql<{ copyItem: { item: ItemRecord } }>(
-      `mutation CopyItem($source: ID!, $target: ID!, $name: String!, $db: String!) {
+      `mutation CopyItem($source: ${byId ? "ID!" : "String!"}, $target: ID!, $name: String!, $db: String!) {
         copyItem(input: {
           database: $db
-          itemId: $source
+          ${byId ? "itemId: $source" : "path: $source"}
           targetParentId: $target
           copyItemName: $name
           deepCopy: true
@@ -247,7 +250,7 @@ export class AuthoringClient {
           item { itemId name displayName path hasChildren template { templateId name } }
         }
       }`,
-      { source: sourceId, target: targetParentId, name, db: this.database },
+      { source, target: targetParentId, name, db: this.database },
     );
     return data.copyItem.item;
   }
